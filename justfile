@@ -15,10 +15,14 @@ abi := "lp64"
 #
 # TODO: add DWARF debug information?
 # TODO: is -g flag necessary here?
-clanglinkopts := "-nostdlib -nostartfiles -fuse-ld=lld -g"
+clanglinkopts := "-nostdlib -nostartfiles -fuse-ld=lld -g -Wl,--gc-sections"
 
 # debug compilation options.
 debugopts := "-g -O0"
+
+# rust compilation target and directory.
+targetrs := "riscv64imac-unknown-none-elf"
+librs    := "target/" + targetrs + "/debug"
 
 build-libs:
     # UART assembly facilities.
@@ -29,28 +33,6 @@ build-libs:
           {{debugopts}} \
           -c uart.s \
           -o uartasm.o
-    # UART facilities.
-    clang --target={{target}} \
-          -march={{arch}} \
-          -mabi={{abi}} \
-          -mcmodel=medany \
-          -fno-stack-protector \
-          -ffreestanding \
-          {{clanglinkopts}} \
-          {{debugopts}} \
-          -c uart.c \
-          -o uart.o
-    # platform facilities.
-    clang --target={{target}} \
-          -march={{arch}} \
-          -mabi={{abi}} \
-          -mcmodel=medany \
-          -fno-stack-protector \
-          -ffreestanding \
-          {{clanglinkopts}} \
-          {{debugopts}} \
-          -c platform.c \
-          -o platform.o
       
 build-bootloader: build-libs
     # machine trap assembly facilities.
@@ -61,17 +43,8 @@ build-bootloader: build-libs
           {{debugopts}} \
           -c machtrap.s \
           -o machtrapasm.o
-    # machine trap facilities.
-    clang --target={{target}} \
-          -march={{arch}} \
-          -mabi={{abi}} \
-          -mcmodel=medany \
-          -fno-stack-protector \
-          -ffreestanding \
-          {{clanglinkopts}} \
-          {{debugopts}} \
-          -c machtrap.c \
-          -o machtrap.o
+    # rust bootloader.
+    cargo build -p hyperion-boot --target {{targetrs}} --target-dir target
     # bootloader.
     clang --target={{target}} \
           -march={{arch}} \
@@ -86,7 +59,8 @@ link-bootloader: build-bootloader
           -march={{arch}} \
           -mabi={{abi}} \
           {{clanglinkopts}} \
-          -Wl,-T,bootloader.ld uartasm.o uart.o platform.o machtrapasm.o machtrap.o bootloader.o \
+          -Wl,-T,bootloader.ld uartasm.o machtrapasm.o bootloader.o \
+          {{librs}}/libhyperion_boot.a \
           -o bootloader.elf
 
 build-kernel: build-libs
@@ -98,17 +72,8 @@ build-kernel: build-libs
           {{debugopts}} \
           -c suptrap.s \
           -o suptrapasm.o
-    # kernel trap facilities.
-    clang --target={{target}} \
-          -march={{arch}} \
-          -mabi={{abi}} \
-          -mcmodel=medany \
-          -fno-stack-protector \
-          -ffreestanding \
-          {{clanglinkopts}} \
-          {{debugopts}} \
-          -c suptrap.c \
-          -o suptrap.o
+    # rust kernel.
+    cargo build -p hyperion-kernel --target {{targetrs}} --target-dir target
     # kernel.
     clang --target={{target}} \
           -march={{arch}} \
@@ -123,7 +88,8 @@ link-kernel: build-kernel
           -march={{arch}} \
           -mabi={{abi}} \
           {{clanglinkopts}} \
-          -Wl,-T,kernel.ld uartasm.o uart.o platform.o suptrapasm.o suptrap.o kernel.o \
+          -Wl,-T,kernel.ld uartasm.o suptrapasm.o kernel.o \
+          {{librs}}/libhyperion_kernel.a \
           -o kernel.elf
 
 # debug with a port open for remote GDB/LLDB, where the program is frozen at
@@ -151,6 +117,14 @@ run: link-bootloader link-kernel
                         -serial stdio \
                         -kernel bootloader.elf \
                         -device loader,file=kernel.bin,addr=0x80200000
+
+# format source files.
+fmt:
+    cargo fmt --all
+
+# lint source files.
+lint:
+    cargo clippy --all
 
 # clean up object files, ELF files, binary files, etc.
 clean:

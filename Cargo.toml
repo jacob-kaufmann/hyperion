@@ -1,0 +1,16 @@
+[workspace]
+members = [
+  "crates/common",
+  "crates/boot",
+  "crates/kernel",
+]
+resolver = "3"
+
+[workspace.dependencies]
+hyperion-common = { path = "crates/common" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
